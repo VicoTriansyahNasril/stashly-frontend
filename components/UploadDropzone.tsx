@@ -1,20 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Button } from "./ui/button";
 import { uploadFile } from "../lib/api";
 import { UploadCloud, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const ACCEPTED_TYPES = {
-  'image/png': [],
-  'image/jpeg': [],
-  'image/webp': [],
-  'application/pdf': [],
-  'application/vnd.android.package-archive': []
-};
 
 export function UploadDropzone() {
   const [uploading, setUploading] = useState(false);
@@ -22,33 +14,27 @@ export function UploadDropzone() {
   const [success, setSuccess] = useState(false);
   const queryClient = useQueryClient();
 
-  const onDrop = useCallback(async (acceptedFiles: File[], rejectedFiles: any[]) => {
-    setError(null);
-    setSuccess(false);
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
 
-    if (rejectedFiles.length > 0) {
-      const rejection = rejectedFiles[0];
-      if (rejection.errors[0]?.code === 'file-too-large') {
-        setError('File size exceeds 50MB limit');
-      } else if (rejection.errors[0]?.code === 'file-invalid-type') {
-        setError('Invalid file type');
-      } else {
-        setError('File rejected');
-      }
+    if (file.size > MAX_FILE_SIZE) {
+      setError("File melebihi batas maksimal 50MB");
       return;
     }
 
-    if (acceptedFiles.length === 0) return;
-
-    const file = acceptedFiles[0];
     setUploading(true);
+    setError(null);
+    setSuccess(false);
 
     try {
       await uploadFile(file);
       setSuccess(true);
       queryClient.invalidateQueries({ queryKey: ['files'] });
+      
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      setError(err.message || "Gagal mengunggah file");
     } finally {
       setUploading(false);
     }
@@ -56,53 +42,61 @@ export function UploadDropzone() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    maxSize: MAX_FILE_SIZE,
-    accept: ACCEPTED_TYPES,
-    multiple: false
+    maxFiles: 1,
+    multiple: false,
+    disabled: uploading,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.webp'],
+      'application/pdf': ['.pdf'],
+      'application/vnd.android.package-archive': ['.apk']
+    }
   });
 
   return (
-    <div className="w-full max-w-2xl mx-auto mt-10">
+    <div className="w-full max-w-2xl">
       <div 
         {...getRootProps()} 
-        className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors
-          ${isDragActive ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 hover:border-blue-400 hover:bg-gray-50'}`}
+        className={`border border-dashed rounded-xl p-10 text-center transition-all bg-white/[0.01]
+          ${uploading ? 'opacity-50 cursor-not-allowed border-white/5' : 'cursor-pointer'}
+          ${isDragActive && !uploading ? 'border-zinc-300 bg-white/[0.03]' : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]'}`}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center justify-center space-y-4">
-          <UploadCloud className={`h-12 w-12 ${isDragActive ? 'text-blue-500' : 'text-gray-400'}`} />
+          <div className={`p-3 rounded-lg border ${isDragActive ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}>
+            <UploadCloud className={`h-6 w-6 ${isDragActive ? 'text-zinc-100' : 'text-zinc-400'}`} />
+          </div>
           <div>
-            <p className="text-lg font-medium text-slate-700">
-              {isDragActive ? "Lepaskan file di sini..." : "Tarik & lepas file kamu di sini, atau klik untuk mencari"}
+            <p className="text-sm font-medium text-zinc-300 mb-1">
+              {isDragActive ? "Lepaskan file di sini..." : "Klik atau seret file ke area ini"}
             </p>
-            <p className="text-sm text-slate-500 mt-1">
-              Mendukung file: JPG, PNG, WEBP, PDF, dan APK (Maksimal 50MB)
+            <p className="text-xs text-zinc-600">
+              Mendukung JPG, PNG, WEBP, PDF, APK hingga 50MB
             </p>
           </div>
         </div>
       </div>
 
       {uploading && (
-        <div className="mt-6 p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center gap-3 shadow-sm">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="font-medium">Sedang mengunggah file kamu... mohon tunggu sebentar ya.</span>
+        <div className="mt-4 p-3 rounded-lg bg-white/[0.02] border border-white/10 text-zinc-300 flex items-center justify-center gap-2 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+          <span>Mengunggah file ke Google Drive...</span>
         </div>
       )}
 
       {error && (
-        <div className="mt-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 flex items-start gap-3 shadow-sm">
-          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+        <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 flex items-start gap-2 text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium">Waduh, gagal mengunggah file!</p>
-            <p className="text-sm mt-0.5 opacity-90">{error}</p>
+            <p className="font-medium">Upload gagal</p>
+            <p className="text-xs mt-0.5 opacity-80">{error}</p>
           </div>
         </div>
       )}
 
       {success && (
-        <div className="mt-6 p-4 rounded-xl bg-green-50 border border-green-100 text-green-700 flex items-center gap-3 shadow-sm">
-          <CheckCircle2 className="h-5 w-5" />
-          <span className="font-medium">Hore, file kamu berhasil diunggah dan sudah bisa dibagikan!</span>
+        <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-2 text-sm">
+          <CheckCircle2 className="h-4 w-4" />
+          <span className="font-medium">File berhasil diunggah dan disimpan.</span>
         </div>
       )}
     </div>
