@@ -8,4 +8,5 @@ export interface StashlyFile {
   webContentLink?: string | null;
   webViewLink?: string | null;
   uploadedAt: string;
+  deletedAt?: string | null;
 }

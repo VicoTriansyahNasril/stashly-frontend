@@ -15,6 +15,7 @@ export function formatFileSize(bytes: number): string {
 
 export function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType === 'application/vnd.android.package-archive') return 'apk';
   return 'file';

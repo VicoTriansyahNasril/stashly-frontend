@@ -23,9 +23,8 @@ export default function Home() {
       {/* Navbar - Ultra minimalist */}
       <nav className="border-b border-white/[0.08] bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <div className="container flex h-14 items-center justify-between mx-auto px-6 max-w-6xl">
-          <div className="flex items-center space-x-2.5 opacity-90 hover:opacity-100 transition-opacity">
-            <Cloud className="h-5 w-5 text-zinc-100" />
-            <span className="font-semibold text-sm tracking-wide text-zinc-100">Stashly</span>
+          <div className="flex items-center opacity-90 hover:opacity-100 transition-opacity ml-2">
+            <img src="/assets/Stashly_logo.png" alt="Stashly Logo" className="h-14 w-auto object-contain scale-[1.7] origin-left" />
           </div>
           {status === "unauthenticated" && (
             <button 
@@ -113,9 +112,8 @@ export default function Home() {
 
       <footer className="border-t border-white/[0.08] mt-12">
         <div className="container mx-auto px-6 py-8 max-w-6xl text-xs text-zinc-600 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <Cloud className="h-4 w-4 opacity-50" />
-            <span>Stashly</span>
+          <div className="flex items-center ml-2">
+            <img src="/assets/Stashly_logo.png" alt="Stashly Logo" className="h-10 w-auto object-contain opacity-50 grayscale scale-[1.5] origin-left" />
           </div>
           <span>© {new Date().getFullYear()}</span>
         </div>

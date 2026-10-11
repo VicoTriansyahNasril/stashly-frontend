@@ -15,9 +15,7 @@ export default function UserPublicPage() {
       
       <main className="container mx-auto px-6 py-12 max-w-6xl">
         <div className="mb-12 flex flex-col items-center text-center">
-          <div className="w-16 h-16 bg-white/[0.02] border border-white/10 rounded-2xl flex items-center justify-center mb-6">
-            <Cloud className="w-8 h-8 text-zinc-400" />
-          </div>
+
           <h1 className="text-3xl font-semibold tracking-tight text-white">
             @{username}
           </h1>
