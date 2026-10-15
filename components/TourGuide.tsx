@@ -1,106 +1,98 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { Step } from "react-joyride";
+import dynamic from "next/dynamic";
+import type { EventData, Step, TooltipRenderProps } from "react-joyride";
 import { X } from "lucide-react";
 
-// Joyride uses window, so we dynamically import it with ssr: false
-const Joyride = dynamic<any>(() => import("react-joyride").then((mod: any) => mod.Joyride), { ssr: false });
+// Joyride memakai `window`, jadi hanya dimuat di client.
+const Joyride = dynamic(() => import("react-joyride").then((mod) => mod.Joyride), { ssr: false });
+
+const STORAGE_KEY = "stashly_has_seen_tour";
+
+const steps: Step[] = [
+  {
+    target: ".tour-upload",
+    content: "Selamat datang di Stashly! Mulai dengan mengunggah file pertama Anda di area ini.",
+    skipBeacon: true,
+    placement: "bottom",
+  },
+  {
+    target: ".tour-sync",
+    content: "Punya file yang sudah ada di Google Drive? Klik ini, pilih filenya, dan file langsung tampil di Stashly tanpa upload ulang.",
+    placement: "left",
+  },
+  {
+    target: ".tour-public",
+    content: "Buka halaman ini untuk melihat profil publik Anda dan semua file yang Anda bagikan.",
+    placement: "bottom",
+  },
+  {
+    target: ".tour-settings",
+    content: "Atur nama pengguna (URL khusus) dan susunan tampilan di menu Pengaturan ini.",
+    placement: "bottom",
+  },
+];
+
+const readSeen = () => {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === "true";
+  } catch {
+    return true; // storage diblokir: jangan paksa tur muncul setiap kali
+  }
+};
 
 export function TourGuide() {
   const [run, setRun] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
-    const hasSeenTour = localStorage.getItem('stashly_has_seen_tour');
-    if (!hasSeenTour) {
-      // Slight delay to ensure elements are rendered
-      setTimeout(() => setRun(true), 500);
-    }
+    if (readSeen()) return;
+    // Jeda singkat agar elemen target sudah dirender
+    const timer = setTimeout(() => setRun(true), 500);
+    return () => clearTimeout(timer);
   }, []);
 
-  const steps: any[] = [
-    {
-      target: '.tour-upload',
-      content: 'Selamat datang di Stashly! Mulai dengan mengunggah file pertama Anda di area ini.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-sync',
-      content: 'Punya file yang sudah ada di Google Drive? Klik ini untuk menyinkronkannya tanpa perlu upload ulang!',
-      placement: 'left',
-    },
-    {
-      target: '.tour-public',
-      content: 'Buka halaman ini untuk melihat profil publik Anda dan membagikan semua file yang bersifat publik.',
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-settings',
-      content: 'Atur nama pengguna (URL khusus) dan ubah susunan tampilan di menu Pengaturan ini.',
-      placement: 'bottom',
-    }
-  ];
-
-  const handleJoyrideCallback = (data: any) => {
-    const { status } = data;
-    const finishedStatuses = ['finished', 'skipped'];
-    if (finishedStatuses.includes(status)) {
+  const handleEvent = ({ status }: EventData) => {
+    if (status === "finished" || status === "skipped") {
       setRun(false);
-      localStorage.setItem('stashly_has_seen_tour', 'true');
+      try {
+        localStorage.setItem(STORAGE_KEY, "true");
+      } catch {
+        // abaikan: storage tidak tersedia
+      }
     }
   };
 
-  if (!isMounted) return null;
+  if (!run) return null;
 
   return (
     <Joyride
       steps={steps}
       run={run}
       continuous
-      showSkipButton
-      showProgress
       scrollToFirstStep
-      callback={handleJoyrideCallback}
-      locale={{
-        back: 'Kembali',
-        close: 'Tutup',
-        last: 'Selesai',
-        next: 'Lanjut',
-        skip: 'Skip Tutorial'
-      }}
-      tooltipComponent={(props: any) => <CustomTooltip {...props} />}
+      onEvent={handleEvent}
+      locale={{ back: "Kembali", close: "Tutup", last: "Selesai", next: "Lanjut", skip: "Lewati Tutorial" }}
+      tooltipComponent={CustomTooltip}
     />
   );
 }
 
-function CustomTooltip({
-  index,
-  step,
-  backProps,
-  closeProps,
-  primaryProps,
-  skipProps,
-  tooltipProps,
-  isLastStep,
-}: any) {
+function CustomTooltip({ index, size, step, backProps, closeProps, primaryProps, skipProps, tooltipProps, isLastStep }: TooltipRenderProps) {
   return (
     <div {...tooltipProps} className="bg-[#18181b] border border-white/10 rounded-xl shadow-2xl p-5 max-w-[320px] sm:max-w-sm font-sans z-[10000]">
       <div className="flex justify-between items-start mb-2">
-        <h3 className="text-white font-semibold text-base">{step.title || 'Panduan'}</h3>
-        <button {...closeProps} className="text-zinc-500 hover:text-white transition-colors p-1" title="Tutup">
+        <h3 className="text-white font-semibold text-base">
+          {step.title || "Panduan"} <span className="text-xs font-normal text-zinc-500">({index + 1}/{size})</span>
+        </h3>
+        <button {...closeProps} className="text-zinc-500 hover:text-white transition-colors p-1">
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="text-zinc-300 text-sm leading-relaxed mb-6">
-        {step.content}
-      </div>
+      <div className="text-zinc-300 text-sm leading-relaxed mb-6">{step.content}</div>
       <div className="flex items-center justify-between">
         <button {...skipProps} className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors px-2 py-1 -ml-2 rounded hover:bg-red-400/10">
-          Skip Tutorial
+          Lewati Tutorial
         </button>
         <div className="flex gap-2">
           {index > 0 && (
@@ -109,7 +101,7 @@ function CustomTooltip({
             </button>
           )}
           <button {...primaryProps} className="px-4 py-1.5 bg-white text-black text-xs font-medium rounded-md hover:bg-zinc-200 transition-colors">
-            {isLastStep ? 'Selesai' : 'Lanjut'}
+            {isLastStep ? "Selesai" : "Lanjut"}
           </button>
         </div>
       </div>

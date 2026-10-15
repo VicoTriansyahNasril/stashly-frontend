@@ -2,9 +2,9 @@
 
 import { useSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Cloud, ArrowRight, HardDrive, Link2, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, HardDrive, Link2, ShieldCheck } from "lucide-react";
 
 export default function Home() {
   const { status } = useSession();
@@ -13,7 +13,7 @@ export default function Home() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.push("/dashboard");
+      router.replace("/dashboard");
     }
   }, [status, router]);
 
@@ -24,6 +24,7 @@ export default function Home() {
       <nav className="border-b border-white/[0.08] bg-black/50 backdrop-blur-md sticky top-0 z-50">
         <div className="container flex h-14 items-center justify-between mx-auto px-6 max-w-6xl">
           <div className="flex items-center opacity-90 hover:opacity-100 transition-opacity ml-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- logo statis kecil */}
             <img src="/assets/Stashly_logo.png" alt="Stashly Logo" className="h-14 w-auto object-contain scale-[1.7] origin-left" />
           </div>
           {status === "unauthenticated" && (
@@ -84,7 +85,7 @@ export default function Home() {
             </div>
             <h3 className="text-sm font-semibold text-white mb-2">Penyimpanan Pribadi</h3>
             <p className="text-sm text-zinc-500 leading-relaxed">
-              Semua file langsung masuk ke Google Drive Anda. Kami tidak menyimpan satu pun byte data Anda di server kami.
+              File disimpan di Google Drive Anda sendiri. Stashly hanya bisa mengakses file yang Anda unggah lewat Stashly atau yang Anda pilih sendiri — bukan seluruh isi Drive Anda.
             </p>
           </div>
           
@@ -104,7 +105,7 @@ export default function Home() {
             </div>
             <h3 className="text-sm font-semibold text-white mb-2">Kontrol Penuh</h3>
             <p className="text-sm text-zinc-500 leading-relaxed">
-              Cabut akses, hapus file, atau sembunyikan dari publik kapan saja langsung melalui dashboard minimalis Anda.
+              Lindungi tautan dengan password atau batas waktu, jadikan privat, atau hapus file kapan saja dari dashboard.
             </p>
           </div>
         </div>
@@ -113,9 +114,14 @@ export default function Home() {
       <footer className="border-t border-white/[0.08] mt-12">
         <div className="container mx-auto px-6 py-8 max-w-6xl text-xs text-zinc-600 flex justify-between items-center">
           <div className="flex items-center ml-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- logo statis kecil */}
             <img src="/assets/Stashly_logo.png" alt="Stashly Logo" className="h-10 w-auto object-contain opacity-50 grayscale scale-[1.5] origin-left" />
           </div>
-          <span>© {new Date().getFullYear()}</span>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-zinc-300 transition-colors">Privasi</Link>
+            <Link href="/terms" className="hover:text-zinc-300 transition-colors">Ketentuan</Link>
+            <span>© {new Date().getFullYear()}</span>
+          </div>
         </div>
       </footer>
     </div>

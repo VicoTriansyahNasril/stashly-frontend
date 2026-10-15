@@ -1,224 +1,161 @@
 import axios from 'axios';
-import { StashlyFile } from '../types/file';
+import { API_URL } from './config';
+import type {
+  DriveFolder,
+  FileSort,
+  FileTypeFilter,
+  LayoutStyle,
+  Paginated,
+  PublicFile,
+  StashlyFile,
+  UserSettings,
+} from '../types/file';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-// Update getFiles to support pagination, search, sort
-export async function getFiles(
-  page: number = 1,
-  limit: number = 50,
-  search: string = '',
-  type: string = '',
-  sort: string = 'newest'
-): Promise<{ data: { files: StashlyFile[], pagination: any } }> {
-  const params = new URLSearchParams({
-    page: String(page),
-    limit: String(limit),
-    search,
-    type,
-    sort
-  });
-  
-  const res = await fetch(`${API_URL}/files/list?${params.toString()}`, {
-    credentials: 'include'
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch files');
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiError';
   }
-  return res.json();
 }
 
-export async function getPublicFiles(username: string): Promise<{ data: StashlyFile[] }> {
-  const res = await fetch(`${API_URL}/files/public?username=${encodeURIComponent(username)}`, {
-    cache: 'no-store'
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch public files');
+type ApiEnvelope<T> = { success: boolean; message: string; data: T };
+
+/** Ambil pesan error dari body backend; selalu string (aman dirender). */
+const errorMessageFrom = (body: unknown, fallback: string): string => {
+  if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string' && body.message) {
+    return body.message;
   }
-  return res.json();
+  return fallback;
+};
+
+async function request<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+  const { json, headers, ...rest } = init;
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      credentials: 'include',
+      ...rest,
+      headers: json !== undefined ? { 'Content-Type': 'application/json', ...headers } : headers,
+      body: json !== undefined ? JSON.stringify(json) : rest.body,
+    });
+  } catch {
+    throw new ApiError('Tidak dapat terhubung ke server. Periksa koneksi Anda.', 0);
+  }
+
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const fallback = res.status === 429 ? 'Terlalu banyak permintaan, coba lagi sebentar lagi.' : 'Terjadi kesalahan, silakan coba lagi.';
+    throw new ApiError(errorMessageFrom(body, fallback), res.status);
+  }
+  return (body as ApiEnvelope<T>).data;
 }
 
-// Upload with Axios for Progress Bar
+const query = (params: Record<string, string | number | undefined>) => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  }
+  const str = search.toString();
+  return str ? `?${str}` : '';
+};
+
+// ───────────── File milik pengguna ─────────────
+
+export const getFiles = (params: { page: number; limit: number; search: string; type: FileTypeFilter; sort: FileSort }) =>
+  request<Paginated<StashlyFile>>(`/files/list${query(params)}`);
+
+export const getTrashFiles = () => request<StashlyFile[]>('/files/trash');
+
 export async function uploadFile(
-  file: File, 
-  isPublic: boolean = true, 
-  folderId?: string,
-  onProgress?: (progress: number) => void
-) {
+  file: File,
+  options: { folderId?: string; onProgress?: (percent: number) => void } = {},
+): Promise<StashlyFile> {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('isPublic', String(isPublic));
-  if (folderId) {
-    formData.append('folderId', folderId);
-  }
+  formData.append('isPublic', 'true');
+  if (options.folderId) formData.append('folderId', options.folderId);
 
   try {
-    const res = await axios.post(`${API_URL}/files/upload`, formData, {
+    const res = await axios.post<ApiEnvelope<StashlyFile>>(`${API_URL}/files/upload`, formData, {
       withCredentials: true,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      onUploadProgress: (progressEvent) => {
-        if (progressEvent.total && onProgress) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          onProgress(percentCompleted);
-        }
+      onUploadProgress: (event) => {
+        if (event.total && options.onProgress) options.onProgress(Math.round((event.loaded * 100) / event.total));
       },
     });
-    return res.data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to upload file');
+    return res.data.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (!error.response) throw new ApiError('Tidak dapat terhubung ke server. Periksa koneksi Anda.', 0);
+      throw new ApiError(errorMessageFrom(error.response.data, 'Gagal mengunggah file'), error.response.status);
+    }
+    throw error;
   }
 }
 
-// Soft delete
-export async function deleteFile(id: string) {
-  const res = await fetch(`${API_URL}/files/${id}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error('Failed to delete file');
-  return res.json();
-}
+export const deleteFile = (id: string) => request<null>(`/files/${id}`, { method: 'DELETE' });
+export const restoreFile = (id: string) => request<null>(`/files/${id}/restore`, { method: 'POST' });
+export const forceDeleteFile = (id: string) => request<null>(`/files/${id}/force`, { method: 'DELETE' });
 
-// Trash
-export async function getTrashFiles(): Promise<{ data: StashlyFile[] }> {
-  const res = await fetch(`${API_URL}/files/trash`, { credentials: 'include' });
-  if (!res.ok) throw new Error('Failed to fetch trash files');
-  return res.json();
-}
+export const renameFile = (id: string, fileName: string) =>
+  request<StashlyFile>(`/files/${id}/rename`, { method: 'PUT', json: { fileName } });
 
-export async function restoreFile(id: string) {
-  const res = await fetch(`${API_URL}/files/${id}/restore`, {
+export const updateFilePosition = (id: string, posX: number, posY: number) =>
+  request<StashlyFile>(`/files/${id}/position`, { method: 'PUT', json: { posX, posY } });
+
+export type ShareSettings = {
+  isPublic?: boolean;
+  /** undefined = tidak diubah, null = hapus password */
+  password?: string | null;
+  /** ISO string; null = tanpa batas waktu */
+  expiresAt?: string | null;
+};
+
+export const updateShareSettings = (id: string, settings: ShareSettings) =>
+  request<StashlyFile>(`/files/${id}/share`, { method: 'PUT', json: settings });
+
+// ───────────── Publik ─────────────
+
+export const getPublicFiles = (username: string, page: number, limit: number) =>
+  request<Paginated<PublicFile>>(`/files/public${query({ username, page, limit })}`, { credentials: 'omit' });
+
+export const getPublicFile = (id: string) =>
+  request<PublicFile>(`/files/public/${encodeURIComponent(id)}`, { credentials: 'omit' });
+
+export const unlockFile = (id: string, password: string) =>
+  request<{ token: string; expiresIn: number }>(`/files/public/${encodeURIComponent(id)}/unlock`, {
     method: 'POST',
-    credentials: 'include',
+    json: { password },
+    credentials: 'omit',
   });
-  if (!res.ok) throw new Error('Failed to restore file');
-  return res.json();
-}
 
-export async function forceDeleteFile(id: string) {
-  const res = await fetch(`${API_URL}/files/${id}/force`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error('Failed to permanently delete file');
-  return res.json();
-}
+// ───────────── URL konten file ─────────────
 
-export async function renameFile(id: string, fileName: string) {
-  const res = await fetch(`${API_URL}/files/${id}/rename`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fileName }),
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error('Failed to rename file');
-  return res.json();
-}
+export const fileUrls = {
+  /** Stream file milik sendiri (butuh cookie sesi). */
+  ownerStream: (id: string, download = false) => `${API_URL}/files/${id}/stream${download ? '?download=1' : ''}`,
+  ownerThumbnail: (id: string) => `${API_URL}/files/${id}/thumbnail`,
+  publicStream: (id: string, options: { download?: boolean; token?: string } = {}) =>
+    `${API_URL}/files/public/${id}/stream${query({ download: options.download ? 1 : undefined, token: options.token })}`,
+  publicThumbnail: (id: string) => `${API_URL}/files/public/${id}/thumbnail`,
+};
 
-// Unlock public file
-export async function unlockFile(id: string, password: string) {
-  const res = await fetch(`${API_URL}/files/${id}/unlock`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
-  });
-  if (!res.ok) {
-     const data = await res.json();
-     throw new Error(data.message || 'Incorrect password');
-  }
-  return res.json();
-}
+// ───────────── Folder & Drive ─────────────
 
-export interface DriveFolder {
-  id: string;
-  name: string;
-}
+export const getFolders = () => request<DriveFolder[]>('/folders');
 
-export async function getFolders(): Promise<{ data: DriveFolder[] }> {
-  const res = await fetch(`${API_URL}/folders`, {
-    credentials: 'include'
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch folders');
-  }
-  return res.json();
-}
+export const createFolder = (name: string) => request<DriveFolder>('/folders', { method: 'POST', json: { name } });
 
-export async function createFolder(name: string): Promise<{ data: DriveFolder }> {
-  const res = await fetch(`${API_URL}/folders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ name }),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Failed to create folder');
-  }
-  return res.json();
-}
+/** Impor file yang dipilih pengguna lewat Google Picker. */
+export const syncDriveFiles = (data: { driveFileIds: string[] }) =>
+  request<{ files: StashlyFile[]; skipped: number }>('/files/sync', { method: 'POST', json: data });
 
-export async function getUserSettings() {
-  const res = await fetch(`${API_URL}/users/me`, {
-    credentials: 'include'
-  });
-  if (!res.ok) throw new Error('Failed to fetch user settings');
-  return res.json();
-}
+// ───────────── Pengguna ─────────────
 
-export async function updateUserSettings(data: { username?: string; theme?: string; layoutStyle?: string }) {
-  const res = await fetch(`${API_URL}/users/settings`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data)
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Failed to update settings');
-  }
-  return res.json();
-}
+/** Access token `drive.file` berumur pendek, khusus untuk Google Picker. */
+export const getDriveToken = () =>
+  request<{ accessToken: string; expiresAt: number }>("/users/drive-token", { cache: "no-store" });
 
-export async function updateFilePosition(id: string, posX: number, posY: number) {
-  const res = await fetch(`${API_URL}/files/${id}/position`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ posX, posY })
-  });
-  if (!res.ok) throw new Error('Failed to update file position');
-  return res.json();
-}
+export const getUserSettings = () => request<UserSettings>('/users/me');
 
-export async function updateFolderPosition(id: string, posX: number, posY: number) {
-  const res = await fetch(`${API_URL}/folders/${id}/position`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ posX, posY })
-  });
-  if (!res.ok) throw new Error('Failed to update folder position');
-  return res.json();
-}
-
-export async function getDriveFiles(folderId: string) {
-  const res = await fetch(`${API_URL}/files/drive-files?folderId=${folderId}`, {
-    credentials: 'include'
-  });
-  if (!res.ok) throw new Error('Failed to fetch drive files');
-  return res.json();
-}
-
-export async function syncDriveFiles(data: { folderId: string, filesToSync: any[] }) {
-  const res = await fetch(`${API_URL}/files/sync`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data)
-  });
-  if (!res.ok) throw new Error('Failed to sync files');
-  return res.json();
-}
+export const updateUserSettings = (data: { username?: string | null; layoutStyle?: LayoutStyle }) =>
+  request<UserSettings>('/users/settings', { method: 'PUT', json: data });

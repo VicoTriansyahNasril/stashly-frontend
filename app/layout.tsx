@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Stashly",
-  description: "Public file storage and sharing",
+  description: "Bagikan file dari Google Drive Anda dengan tautan yang aman.",
 };
 
 export default function RootLayout({
@@ -17,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="id">
       <body className={inter.className}>
         <QueryProvider>
           <AuthProvider>

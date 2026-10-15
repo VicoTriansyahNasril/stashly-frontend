@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cloud, LayoutDashboard, LogOut, Trash2, Settings } from "lucide-react";
+import { LayoutDashboard, LogOut, Trash2, Settings } from "lucide-react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { useState } from "react";
 import { ConfirmDialog } from "./CustomDialog";
@@ -22,7 +22,8 @@ export function Navbar() {
     <>
       <nav className="border-b border-white/[0.05] bg-black/60 backdrop-blur-xl sticky top-0 z-40">
         <div className="container flex h-16 items-center justify-between mx-auto px-6 max-w-6xl">
-          <Link href="/" className="flex items-center opacity-90 hover:opacity-100 transition-opacity ml-2">
+          <Link href="/" aria-label="Beranda Stashly" className="flex items-center opacity-90 hover:opacity-100 transition-opacity ml-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- logo statis kecil */}
             <img src="/assets/Stashly_logo.png" alt="Stashly Logo" className="h-14 w-auto object-contain scale-[1.7] origin-left" />
           </Link>
           <div className="flex items-center space-x-2 sm:space-x-5">
@@ -49,7 +50,8 @@ export function Navbar() {
                 <div className="flex items-center gap-1 sm:gap-3">
                   <div className="flex items-center gap-2">
                     {session?.user?.image ? (
-                      <img src={session.user.image} alt={session.user.name || "User"} className="w-7 h-7 rounded-full border border-white/10" />
+                      // eslint-disable-next-line @next/next/no-img-element -- avatar Google eksternal
+                      <img src={session.user.image} alt={session.user.name || "User"} referrerPolicy="no-referrer" className="w-7 h-7 rounded-full border border-white/10" />
                     ) : (
                       <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-semibold">
                         {session?.user?.name?.[0]?.toUpperCase() || "U"}
@@ -63,6 +65,7 @@ export function Navbar() {
                     onClick={() => setIsSettingsOpen(true)}
                     className="tour-settings text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/10 p-2 sm:px-2.5 sm:py-1.5 rounded-md transition-colors flex items-center gap-1.5"
                     title="Pengaturan"
+                    aria-label="Pengaturan"
                   >
                     <Settings className="w-4 h-4" />
                   </button>

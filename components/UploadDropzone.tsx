@@ -1,13 +1,23 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useDropzone } from "react-dropzone";
-import { uploadFile, createFolder } from "../lib/api";
-import { UploadCloud, CheckCircle2, AlertCircle, Loader2, FolderOpen, Plus, Folder, File as FileIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useDropzone, type FileRejection } from "react-dropzone";
+import { uploadFile, createFolder } from "@/lib/api";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_SIZE } from "@/lib/config";
+import { UploadCloud, CheckCircle2, AlertCircle, Loader2, FolderOpen, Plus, File as FileIcon, HardDrive } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useFolders } from "../hooks/useFolders";
+import { useFolders } from "@/hooks/useFolders";
+import { useDrivePicker } from "@/hooks/useDrivePicker";
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const errorMessage = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
+
+const validateFileName = (name: string) => {
+  const trimmed = name.trim();
+  if (!trimmed) return "Nama file tidak boleh kosong";
+  if (trimmed.length > 255) return "Nama file maksimal 255 karakter";
+  if (/[\\/\u0000-\u001f]/.test(trimmed)) return "Nama file tidak boleh mengandung / atau \\";
+  return null;
+};
 
 export function UploadDropzone() {
   const [uploading, setUploading] = useState(false);
@@ -18,6 +28,9 @@ export function UploadDropzone() {
   // Folder states
   const { data: foldersData, isLoading: isLoadingFolders } = useFolders();
   const [selectedFolder, setSelectedFolder] = useState<string>("root");
+  // Folder yang baru dipilih lewat Google Picker (agar namanya langsung tampil)
+  const [pickedFolder, setPickedFolder] = useState<{ id: string; name: string } | null>(null);
+  const folderPicker = useDrivePicker();
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolderLoading, setCreatingFolderLoading] = useState(false);
@@ -27,22 +40,38 @@ export function UploadDropzone() {
   const [previewName, setPreviewName] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const filteredFolders = foldersData?.data?.filter((folder: any) => 
+  const filteredFolders = (foldersData ?? []).filter((folder) =>
     folder.name.toLowerCase().includes(searchFolderQuery.toLowerCase())
-  ) || [];
+  );
+
+  // Bebaskan object URL preview saat diganti/komponen dilepas (mencegah memory leak)
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const handlePickFolder = async () => {
+    setIsDropdownOpen(false);
+    const [folder] = await folderPicker.pick({ mode: "folder" });
+    if (!folder) return;
+    setPickedFolder({ id: folder.id, name: folder.name });
+    setSelectedFolder(folder.id);
+    queryClient.invalidateQueries({ queryKey: ["folders"] });
+  };
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     setCreatingFolderLoading(true);
     setError(null);
     try {
-      const res = await createFolder(newFolderName);
+      const folder = await createFolder(newFolderName.trim());
       await queryClient.invalidateQueries({ queryKey: ['folders'] });
-      setSelectedFolder(res.data.id);
+      setSelectedFolder(folder.id);
       setIsCreatingFolder(false);
       setNewFolderName("");
-    } catch (err: any) {
-      setError(err.message || "Gagal membuat folder");
+    } catch (err) {
+      setError(errorMessage(err, "Gagal membuat folder"));
     } finally {
       setCreatingFolderLoading(false);
     }
@@ -50,14 +79,20 @@ export function UploadDropzone() {
 
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-
-    if (file.size > MAX_FILE_SIZE) {
-      setError("File melebihi batas maksimal 50MB");
+  const onDrop = useCallback((acceptedFiles: File[], rejections: FileRejection[]) => {
+    const rejectionCode = rejections[0]?.errors[0]?.code;
+    if (rejectionCode) {
+      setError(
+        rejectionCode === "file-too-large"
+          ? "File melebihi batas maksimal 50MB"
+          : rejectionCode === "file-invalid-type"
+            ? "Tipe file tidak didukung. Gunakan JPG, PNG, WEBP, PDF, atau APK."
+            : "File tidak dapat diunggah"
+      );
       return;
     }
+    const file = acceptedFiles[0];
+    if (!file) return;
 
     setSelectedFile(file);
     setPreviewName(file.name);
@@ -72,6 +107,11 @@ export function UploadDropzone() {
 
   const handleUpload = async () => {
     if (!selectedFile) return;
+    const nameError = validateFileName(previewName);
+    if (nameError) {
+      setError(nameError);
+      return;
+    }
     
     setUploading(true);
     setUploadProgress(0);
@@ -80,26 +120,25 @@ export function UploadDropzone() {
 
     try {
       let finalFile = selectedFile;
-      if (previewName !== selectedFile.name) {
-        finalFile = new File([selectedFile], previewName, { type: selectedFile.type });
+      const finalName = previewName.trim();
+      if (finalName !== selectedFile.name) {
+        finalFile = new File([selectedFile], finalName, { type: selectedFile.type });
       }
 
-      await uploadFile(
-         finalFile, 
-         true, 
-         selectedFolder === "root" ? undefined : selectedFolder,
-         (progress) => setUploadProgress(progress)
-      );
+      await uploadFile(finalFile, {
+        folderId: selectedFolder === "root" ? undefined : selectedFolder,
+        onProgress: setUploadProgress,
+      });
       setSuccess(true);
       queryClient.invalidateQueries({ queryKey: ['files'] });
-      
+      queryClient.invalidateQueries({ queryKey: ['me'] });
+
       setSelectedFile(null);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
-      
+
       setTimeout(() => setSuccess(false), 3000);
-    } catch (err: any) {
-      setError(err.message || "Gagal mengunggah file");
+    } catch (err) {
+      setError(errorMessage(err, "Gagal mengunggah file"));
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -108,7 +147,6 @@ export function UploadDropzone() {
 
   const handleCancelPreview = () => {
     setSelectedFile(null);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setPreviewName("");
     setError(null);
@@ -119,11 +157,8 @@ export function UploadDropzone() {
     maxFiles: 1,
     multiple: false,
     disabled: uploading,
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.webp'],
-      'application/pdf': ['.pdf'],
-      'application/vnd.android.package-archive': ['.apk']
-    }
+    maxSize: MAX_UPLOAD_SIZE,
+    accept: ALLOWED_UPLOAD_TYPES,
   });
 
   return (
@@ -139,7 +174,9 @@ export function UploadDropzone() {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <input 
               type="text" 
-              placeholder="Nama folder..." 
+              placeholder="Nama folder..."
+              aria-label="Nama folder baru"
+              maxLength={255}
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               disabled={creatingFolderLoading}
@@ -176,7 +213,8 @@ export function UploadDropzone() {
                 <span className="truncate">
                   {selectedFolder === "root" 
                     ? "Root (Halaman Depan)" 
-                    : foldersData?.data?.find((f: any) => f.id === selectedFolder)?.name || "Pilih folder..."}
+                    : foldersData?.find((f) => f.id === selectedFolder)?.name ||
+                      (pickedFolder?.id === selectedFolder ? pickedFolder.name : "Pilih folder...")}
                 </span>
                 <span className="text-zinc-500 text-[10px]">▼</span>
               </div>
@@ -202,7 +240,7 @@ export function UploadDropzone() {
                       >
                         📁 Root (Halaman Depan)
                       </div>
-                      {filteredFolders.map((folder: any) => (
+                      {filteredFolders.map((folder) => (
                         <div
                           key={folder.id}
                           onClick={() => { setSelectedFolder(folder.id); setIsDropdownOpen(false); }}
@@ -215,6 +253,15 @@ export function UploadDropzone() {
                         <div className="px-2 py-3 text-xs text-center text-zinc-500">
                           Folder tidak ditemukan
                         </div>
+                      )}
+                      {folderPicker.isConfigured && (
+                        <button
+                          type="button"
+                          onClick={handlePickFolder}
+                          className="mt-1 w-full px-2 py-1.5 text-sm rounded flex items-center gap-2 text-blue-300 hover:bg-white/5 border-t border-white/5"
+                        >
+                          <HardDrive className="w-3.5 h-3.5" /> Pilih folder lain dari Google Drive…
+                        </button>
                       )}
                     </div>
                   </div>
@@ -239,6 +286,7 @@ export function UploadDropzone() {
           <div className="flex flex-col sm:flex-row items-center gap-6">
             <div className="w-32 h-32 flex-shrink-0 bg-black/50 rounded-lg border border-white/10 flex items-center justify-center overflow-hidden">
               {previewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- blob URL lokal
                 <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
               ) : (
                 <div className="flex flex-col items-center text-zinc-500">
@@ -250,10 +298,12 @@ export function UploadDropzone() {
             
             <div className="flex-1 w-full space-y-4">
               <div>
-                <label className="text-xs text-zinc-400 font-medium mb-1.5 block">Nama File</label>
-                <input 
-                  type="text" 
-                  value={previewName} 
+                <label htmlFor="upload-file-name" className="text-xs text-zinc-400 font-medium mb-1.5 block">Nama File</label>
+                <input
+                  id="upload-file-name"
+                  type="text"
+                  maxLength={255}
+                  value={previewName}
                   onChange={(e) => setPreviewName(e.target.value)}
                   disabled={uploading}
                   className="w-full h-10 bg-black/50 border border-white/10 rounded-md px-3 text-sm text-white focus:outline-none focus:border-white/30"
@@ -327,6 +377,12 @@ export function UploadDropzone() {
              ></div>
           </div>
         </div>
+      )}
+
+      {folderPicker.error && (
+        <p role="alert" className="mt-2 text-xs text-red-400">
+          {folderPicker.error}
+        </p>
       )}
 
       {error && (

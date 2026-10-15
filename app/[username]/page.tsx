@@ -1,30 +1,26 @@
 "use client";
 
-import { Navbar } from "@/components/Navbar";
-import { FileGrid } from "@/components/FileGrid";
 import { useParams } from "next/navigation";
-import { Cloud } from "lucide-react";
+import { Navbar } from "@/components/Navbar";
+import { PublicFileGrid } from "@/components/FileGrid";
 
 export default function UserPublicPage() {
-  const params = useParams();
-  const username = params.username as string;
+  const params = useParams<{ username: string }>();
+  const username = decodeURIComponent(params.username ?? "");
 
   return (
     <div className="min-h-screen bg-[#000000] text-zinc-300 font-sans selection:bg-zinc-800">
       <Navbar />
-      
-      <main className="container mx-auto px-6 py-12 max-w-6xl">
-        <div className="mb-12 flex flex-col items-center text-center">
 
-          <h1 className="text-3xl font-semibold tracking-tight text-white">
-            @{username}
-          </h1>
+      <main className="container mx-auto px-4 sm:px-6 py-12 max-w-6xl">
+        <div className="mb-12 flex flex-col items-center text-center">
+          <h1 className="text-3xl font-semibold tracking-tight text-white break-all">@{username}</h1>
           <p className="text-sm text-zinc-500 mt-2 max-w-md">
-            Halaman ini berisi kumpulan file publik yang dibagikan secara langsung dari Google Drive {username}.
+            Kumpulan file publik yang dibagikan oleh {username} melalui Stashly.
           </p>
         </div>
-        
-        <FileGrid isAdmin={false} username={username} />
+
+        <PublicFileGrid username={username} />
       </main>
     </div>
   );
